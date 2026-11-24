@@ -74,6 +74,10 @@ enum Module {
 constexpr int kMinModuleScale = 50, kMaxModuleScale = 200;  // 模块大小，百分比
 constexpr int kMinLongPressMs = 200;
 constexpr int kMaxLongPressMs = 5000;
+// 双击 Ctrl 的间隔上限：两下干净轻点松开之间的毫秒数
+constexpr int kMinDoubleTapMs = 150;
+constexpr int kMaxDoubleTapMs = 1000;
+constexpr int kDefaultDoubleTapMs = 400;
 constexpr int kDefaultLongPressMs = 1000;
 constexpr int kDefaultGlassTransparency = 60;  // 液态玻璃的透明度（0 – 100%），60 是原来的样子
 constexpr int kMaxPopupOffset = 1000;
@@ -119,8 +123,8 @@ inline int ModuleSideOf(int edge) { return edge == kEdgeBottom || DualEdge(edge)
 struct Settings {
     bool autoHideOnFullscreen = true;  // 窗口最大化或全屏时隐藏任务栏
     bool alwaysHideTaskbar = false;    // 一直隐藏任务栏：没有窗口最大化时也藏着，鼠标碰到屏幕边上也不弹出
-    bool longPressPopup = true;
-    int longPressMs = 1000;
+    bool doubleTapPopup = true;
+    int doubleTapMs = kDefaultDoubleTapMs;
     bool showPinnedApps = true;  // 迷你任务栏里显示固定在任务栏的应用
     ModuleSet modules[2];        // 迷你任务栏放在底部、侧边时各显示哪些，见 ModuleSide
     std::wstring savedLayout[2];  // 编辑模式里“保存当前布局”存下的（底部、侧边各一份，见 ModuleSetText），空 = 没存过
@@ -141,7 +145,7 @@ struct Settings {
     std::vector<ScreenPlace> screens;
     int language = kLangSystem;     // 界面语言，见 Language
     bool debugLog = false;       // 诊断日志
-    bool runAsAdmin = false;     // 以管理员身份运行（管理员权限的程序、游戏里也能长按 Win）
+    bool runAsAdmin = false;     // 以管理员身份运行（管理员权限的程序、游戏里也能双击 Ctrl）
     bool checkUpdates = false;   // 自动检查更新
     bool keepFloatsOnTop = true; // 点全屏（最大化）的窗口时，浮在上面的小窗口不被盖住
     bool pinTopmost = false;     // 固定的小窗口在所有窗口上面（置顶），不只是全屏窗口
@@ -243,7 +247,7 @@ constexpr UINT_PTR kTimerAfterShow = 7;      // 没开自动隐藏时：任务�
 
 // 主窗口消息
 constexpr UINT WM_APP_TRAY = WM_APP + 1;       // 托盘图标的鼠标事件
-constexpr UINT WM_APP_LONGPRESS = WM_APP + 2;  // 钩子线程通知：Win 键长按了
+constexpr UINT WM_APP_LONGPRESS = WM_APP + 2;  // 钩子线程通知：双击 Ctrl（藏着任务栏时长按 Win 也走这里）
 constexpr UINT WM_APP_AUTOHIDE_OFF = WM_APP + 3;  // 动画线程通知：关自动隐藏的结果，wParam 是请求编号，lParam 非 0 = 关掉了
 constexpr UINT WM_APP_AUTOHIDE_ON = WM_APP + 4;   // 动画线程通知：开自动隐藏的结果，wParam 是请求编号，lParam 非 0 = 开了
 constexpr UINT WM_APP_UPDATE = WM_APP + 5;        // 检查更新的线程通知：结果出来了，交给 Update_OnResult

@@ -1,7 +1,7 @@
 // 以管理员身份运行。
 //
 // 前台是以管理员身份运行的程序（不少游戏、带反作弊的游戏、从管理员 Steam 启动的游戏）时，
-// Windows 不把它收到的按键交给普通权限程序的键盘钩子：长按 Win 本程序看不到，按键直接交给系统、打开开始菜单。
+// Windows 不把它收到的按键交给普通权限程序的键盘钩子：双击 Ctrl 本程序看不到，按键直接交给系统、打开开始菜单。
 // 本程序自己也以管理员身份运行就能收到。开机自启改用“任务计划程序”（最高权限、不弹 UAC），
 // 从迷你任务栏启动的程序通过资源管理器以普通权限启动，免得它们也变成管理员权限。
 #include "common.h"
@@ -134,10 +134,10 @@ HWINEVENTHOOK s_fgHook = nullptr;
 bool s_hinted = false;
 
 void CALLBACK OnForeground(HWINEVENTHOOK, DWORD, HWND hwnd, LONG, LONG, DWORD, DWORD) {
-    if (s_hinted || IsElevated() || !g_settings.longPressPopup || !hwnd) return;
+    if (s_hinted || IsElevated() || !g_settings.doubleTapPopup || !hwnd) return;
     if (!RunsAboveUs(hwnd)) return;
-    Log(L"前台程序 %ls 的权限比本程序高，长按 Win 在它里面收不到", GetProcessPath(hwnd).c_str());
-    s_hinted = ShowTrayBalloon(Tr(L"这个程序里长按 Win 不起作用"),
+    Log(L"前台程序 %ls 的权限比本程序高，双击 Ctrl 在它里面收不到", GetProcessPath(hwnd).c_str());
+    s_hinted = ShowTrayBalloon(Tr(L"这个程序里双击 Ctrl 不起作用"),
                     Tr(L"前台程序以管理员身份运行（不少游戏是这样），普通权限的 TaskbarPopup 收不到它里面的按键。"
                        L"在托盘菜单里勾选“以管理员身份运行”即可。"));
 }

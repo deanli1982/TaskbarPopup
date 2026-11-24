@@ -28,11 +28,11 @@ const wchar_t* const kEnglish[][2] = {
     {L"显示", L"Contents"},
     {L"界面", L"Interface"},
     {L"最大化或全屏时隐藏任务栏", L"Hide taskbar when maximized or fullscreen"},
-    {L"窗口铺满整块屏幕，要用任务栏时长按 Win", L"Windows fill the whole screen; hold Win for the taskbar"},
+    {L"窗口铺满整块屏幕，要用任务栏时双击 Ctrl", L"Windows fill the whole screen; double-tap Ctrl for the taskbar"},
     {L"点全屏窗口时小窗口留在上面", L"Keep small windows above fullscreen ones"},
     {L"双击小窗口或按快捷键固定它，最小化就取消", L"Double-click or use the hotkey to pin; minimize to unpin"},
     {L"固定的小窗口在所有窗口上面", L"Keep pinned windows above all windows"},
-    {L"长按 Win 键弹出迷你任务栏", L"Hold Win to show the mini taskbar"},
+    {L"双击 Ctrl 弹出迷你任务栏", L"Double-tap Ctrl to show the mini taskbar"},
     {L"左键单击托盘图标也能弹出", L"Clicking the tray icon works too"},
     {L"显示固定在任务栏的应用", L"Show pinned apps"},
     {L"显示音量调节", L"Show volume"},
@@ -55,6 +55,7 @@ const wchar_t* const kEnglish[][2] = {
     {L"开机自动启动", L"Start with Windows"},
     {L"自动检查更新", L"Auto-check for updates"},
     {L"每天看一次 GitHub 上有没有新版本", L"Checks GitHub once a day"},
+    {L"双击间隔", L"Double-tap gap"},
     {L"长按时长", L"Hold time"},
     {L"圆角", L"Corner radius"},
     {L"%d 像素", L"%d px"},
@@ -191,17 +192,17 @@ const wchar_t* const kEnglish[][2] = {
     {L"快捷键 %ls 被别的程序占用了，在设置里换一个吧。", L"Hotkey %ls is in use by another app. Pick another one in Settings."},
 
     // 托盘图标和菜单
-    {L"TaskbarPopup：全屏隐藏任务栏 / 长按 Win 弹出", L"TaskbarPopup: fullscreen without taskbar / hold Win"},
-    {L"长按 Win 键弹出迷你任务栏（%d 毫秒）", L"Hold Win to show the mini taskbar (%d ms)"},
+    {L"TaskbarPopup：全屏隐藏任务栏 / 双击 Ctrl 弹出", L"TaskbarPopup: fullscreen without taskbar / double-tap Ctrl"},
+    {L"双击 Ctrl 弹出迷你任务栏（间隔 %d 毫秒）", L"Double-tap Ctrl to show the mini taskbar (%d ms gap)"},
     {L"显示迷你任务栏", L"Show mini taskbar"},
     {L"设置...", L"Settings..."},
     {L"检查更新", L"Check for updates"},
     {L"窗口最大化或全屏时隐藏任务栏", L"Hide taskbar when maximized or fullscreen"},
-    {L"以管理员身份运行（游戏里也能长按 Win）", L"Run as administrator (hold Win works in games)"},
+    {L"以管理员身份运行（游戏里也能双击 Ctrl）", L"Run as administrator (double-tap Ctrl works in games)"},
     {L"记录诊断日志", L"Record diagnostic log"},
     {L"打开诊断日志所在文件夹", L"Open diagnostic log folder"},
     {L"退出", L"Exit"},
-    {L"无法安装键盘钩子，长按 Win 功能不可用。", L"Couldn't install the keyboard hook. Holding Win won't work."},
+    {L"无法安装键盘钩子，双击 Ctrl 功能不可用。", L"Couldn't install the keyboard hook. Double-tap Ctrl won't work."},
 
     // 迷你任务栏
     {L"第 %d/%d 页", L"Page %d/%d"},
@@ -310,7 +311,7 @@ const wchar_t* const kEnglish[][2] = {
     {L"已固定，点全屏窗口时它留在上面", L"Pinned: stays above fullscreen windows"},
 
     // 管理员权限
-    {L"这个程序里长按 Win 不起作用", L"Holding Win doesn't work in this app"},
+    {L"这个程序里双击 Ctrl 不起作用", L"Double-tap Ctrl doesn't work in this app"},
     {L"前台程序以管理员身份运行（不少游戏是这样），普通权限的 TaskbarPopup 收不到它里面的按键。"
      L"在托盘菜单里勾选“以管理员身份运行”即可。",
      L"The app in front runs as administrator (many games do), so TaskbarPopup can't see its keys. "

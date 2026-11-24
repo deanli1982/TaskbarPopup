@@ -50,7 +50,7 @@ const wchar_t* const kPageNames[kPageCount] = {L"任务栏", L"迷你任务栏",
                                                L"外观",   L"方案和备份", L"快捷键",     L"启动和更新"};
 
 // 开关
-enum Toggle { kAutoHide, kKeepFloats, kPinTopmost, kLongPress, kPinned, kVolume, kRadios, kTray, kAutoStart, kUpdates, kPerScreen,
+enum Toggle { kAutoHide, kKeepFloats, kPinTopmost, kDoubleTap, kPinned, kVolume, kRadios, kTray, kAutoStart, kUpdates, kPerScreen,
              kAlwaysHide, kFlashAlert, kEdgePopup, kMedia, kIme, kBattery, kClock, kClockSeconds, kClockWeekday, kClockDate,
              kShowTitle, kKeepOtherBars, kMarkScreens, kBrightAll, kBright, kVolumeCapsule, kBrightCapsule, kShowStart,
              kShowWindows, kToggleCount };
@@ -59,10 +59,10 @@ struct ToggleText {
     const wchar_t* sub;  // 可以为空
 };
 const ToggleText kToggleText[kToggleCount] = {
-    {L"最大化或全屏时隐藏任务栏", L"窗口铺满整块屏幕，要用任务栏时长按 Win"},
+    {L"最大化或全屏时隐藏任务栏", L"窗口铺满整块屏幕，要用任务栏时双击 Ctrl"},
     {L"点全屏窗口时小窗口留在上面", L"双击小窗口或按快捷键固定它，最小化就取消"},
     {L"固定的小窗口在所有窗口上面", nullptr},
-    {L"长按 Win 键弹出迷你任务栏", L"左键单击托盘图标也能弹出"},
+    {L"双击 Ctrl 弹出迷你任务栏", L"左键单击托盘图标也能弹出"},
     {L"显示固定在任务栏的应用", nullptr},
     {L"显示音量调节", nullptr},
     {L"显示 Wi-Fi 和蓝牙开关", L"右键按钮弹出网络、蓝牙列表"},
@@ -94,7 +94,7 @@ const ToggleText kToggleText[kToggleCount] = {
 // 滑块
 // 快捷键的长按时长：kPopupHoldMs + HotkeyId
 enum SliderId {
-    kLongPressMs, kRadius, kPopupHoldMs, kPinHoldMs, kMoveHoldMs, kNextHoldMs, kBottomHoldMs, kSideHoldMs, kGlassAlpha, kIconSize,
+    kDoubleTapMs, kRadius, kPopupHoldMs, kPinHoldMs, kMoveHoldMs, kNextHoldMs, kBottomHoldMs, kSideHoldMs, kGlassAlpha, kIconSize,
     kIconGap, kRadius2, kSliderCount
 };
 static_assert(kPopupHoldMs + kHotkeyCount == kGlassAlpha, "每个快捷键一个长按时长");
@@ -103,7 +103,7 @@ struct SliderSpec {
     int minValue, maxValue, step;
 };
 const SliderSpec kSliderSpec[kSliderCount] = {
-    {L"长按时长", kMinLongPressMs, kMaxLongPressMs, 100},
+    {L"双击间隔", kMinDoubleTapMs, kMaxDoubleTapMs, 50},
     {L"圆角", 0, kMaxPopupRadius, 2},
     {L"长按时长", kMinLongPressMs, kMaxLongPressMs, 100},
     {L"长按时长", kMinLongPressMs, kMaxLongPressMs, 100},
@@ -343,7 +343,7 @@ const Palette& Colors() {
 
 bool HotkeyEnabled(int which) { return which != kHotkeyPin || s_v.on[kKeepFloats]; }  // 固定了也要它开着才有用
 bool SliderEnabled(int which) {
-    if (which == kLongPressMs) return s_v.on[kLongPress];
+    if (which == kDoubleTapMs) return s_v.on[kDoubleTap];
     if (which >= kPopupHoldMs && which < kPopupHoldMs + kHotkeyCount) return HotkeyEnabled(which - kPopupHoldMs);
     return true;
 }
@@ -633,9 +633,9 @@ float BuildPage(int page, float x, float y) {
             return AddGroup(x, y, AppsTitle(), {ChipsRow});
         }
         case kPageMini: {
-            // 长按 Win 关着时收起长按时长
-            std::vector<RowFn> popup = {[](float x, float y, float w) { return ToggleRow(kLongPress, x, y, w); }};
-            if (s_v.on[kLongPress]) popup.push_back([](float x, float y, float w) { return SliderRow(kLongPressMs, x, y, w); });
+            // 双击 Ctrl 关着时收起双击间隔
+            std::vector<RowFn> popup = {[](float x, float y, float w) { return ToggleRow(kDoubleTap, x, y, w); }};
+            if (s_v.on[kDoubleTap]) popup.push_back([](float x, float y, float w) { return SliderRow(kDoubleTapMs, x, y, w); });
             popup.push_back([](float x, float y, float w) { return ToggleRow(kEdgePopup, x, y, w); });
             y = AddGroup(x, y, L"弹出", popup);
             return AddGroup(x, y, L"显示", {[](float x, float y, float w) { return ToggleRow(kPinned, x, y, w); }});
@@ -1619,7 +1619,7 @@ void SetToggle(int which, bool on) {
     s_knobStart[which] = NowMs();
     StartAnimation();
     // 跟着收起 / 放出来的行；“最大化或全屏时隐藏任务栏”换的是下面那个名单
-    if (which == kAutoHide || which == kKeepFloats || which == kLongPress || which == kClock || which == kTray ||
+    if (which == kAutoHide || which == kKeepFloats || which == kDoubleTap || which == kClock || which == kTray ||
         which == kVolume || which == kBright)
         Relayout(true);
     // 显示哪些、时钟显示什么：弹出来看看
@@ -1767,7 +1767,7 @@ void TryHotkey(UINT hotkey) {
     }
     SetHotkey(which, hotkey);
     EndCapture();
-    if (which == kHotkeyPopup) SetToggle(kLongPress, false);  // 有了弹出迷你任务栏的快捷键，长按 Win 先关掉（想要可以再打开）
+    if (which == kHotkeyPopup) SetToggle(kDoubleTap, false);  // 有了弹出迷你任务栏的快捷键，双击 Ctrl 先关掉（想要可以再打开）
 }
 
 // 录的时候现在按着的 Ctrl / Shift / Alt；except 这个（分左右的）键不算
@@ -1966,7 +1966,7 @@ Values ValuesFromSettings() {
     v.on[kAlwaysHide] = st.alwaysHideTaskbar;
     v.on[kKeepFloats] = st.keepFloatsOnTop;
     v.on[kPinTopmost] = st.pinTopmost;
-    v.on[kLongPress] = st.longPressPopup;
+    v.on[kDoubleTap] = st.doubleTapPopup;
     v.on[kPinned] = st.showPinnedApps;
     v.on[kFlashAlert] = st.flashAlert;
     v.on[kEdgePopup] = st.edgePopup;
@@ -1986,7 +1986,7 @@ Values ValuesFromSettings() {
     v.on[kBrightAll] = st.brightnessAllScreens;
     v.seg[kSegWindows] = st.popupWindows;
     v.seg[kSegAlign2] = st.secondAlign == kAlignCustom ? 1 : 0;
-    v.slider[kLongPressMs] = st.longPressMs;
+    v.slider[kDoubleTapMs] = st.doubleTapMs;
     v.slider[kRadius] = st.popupRadius;
     v.slider[kRadius2] = st.secondRadius;
     v.slider[kGlassAlpha] = st.glassTransparency;
@@ -2206,7 +2206,11 @@ void Apply() {
     if (changed(kAlwaysHide)) g_settings.alwaysHideTaskbar = s_v.on[kAlwaysHide];
     if (changed(kKeepFloats)) g_settings.keepFloatsOnTop = s_v.on[kKeepFloats];
     if (changed(kPinTopmost)) g_settings.pinTopmost = s_v.on[kPinTopmost];
-    if (changed(kLongPress)) g_settings.longPressPopup = s_v.on[kLongPress];
+    if (changed(kDoubleTap)) {
+        g_settings.doubleTapPopup = s_v.on[kDoubleTap];
+        // 打开双击 Ctrl：收掉弹出迷你任务栏的快捷键绑定，两个触发器只留一个（与录快捷键时关双击对称）
+        if (s_v.on[kDoubleTap]) SetHotkey(kHotkeyPopup, 0);
+    }
     if (changed(kPinned)) g_settings.showPinnedApps = s_v.on[kPinned];
     if (changed(kFlashAlert)) g_settings.flashAlert = s_v.on[kFlashAlert];
     if (changed(kEdgePopup)) g_settings.edgePopup = s_v.on[kEdgePopup];
@@ -2219,7 +2223,7 @@ void Apply() {
     if (changed(kClockDate)) g_settings.clockDate = s_v.on[kClockDate];
     if (changed(kShowTitle)) g_settings.showTitle = s_v.on[kShowTitle];
     if (changed(kUpdates)) g_settings.checkUpdates = s_v.on[kUpdates];
-    if (s_v.slider[kLongPressMs] != s_initial.slider[kLongPressMs]) g_settings.longPressMs = s_v.slider[kLongPressMs];
+    if (s_v.slider[kDoubleTapMs] != s_initial.slider[kDoubleTapMs]) g_settings.doubleTapMs = s_v.slider[kDoubleTapMs];
     if (s_v.slider[kRadius] != s_initial.slider[kRadius]) g_settings.popupRadius = s_v.slider[kRadius];
     if (s_v.slider[kRadius2] != s_initial.slider[kRadius2]) g_settings.secondRadius = s_v.slider[kRadius2];
     if (s_v.slider[kGlassAlpha] != s_initial.slider[kGlassAlpha]) g_settings.glassTransparency = s_v.slider[kGlassAlpha];

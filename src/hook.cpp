@@ -1,9 +1,13 @@
-// 全局键盘钩子：区分 Win 键的短按、组合键和长按。
+// 全局键盘钩子：双击 Ctrl 弹出迷你任务栏；藏着任务栏时还管 Win 键的短按、组合键和长按。
 //
-// Win 按下时先拦住不交给系统，然后：
-//   - 在阈值内松开         → 补发一次 Win 单击，开始菜单照常打开
+// 双击 Ctrl：两次「干净」的轻点（按住期间没碰别的键/鼠标、每下不超过 600ms），
+// 两下松开间隔不超过设定值 → 通知主窗口弹出迷你任务栏（开着就收回去）。
+// 只观察不拦截：单独轻点 Ctrl 对系统无副作用；Ctrl+C 之类组合键被中间的按键打断，不会误触发。
+//
+// 藏着任务栏时（全屏模式）Win 按下先拦住不交给系统，然后：
+//   - 在阈值内松开         → 补发一次 Win 单击（先弹迷你任务栏再开开始菜单，见 WM_APP_WINTAP）
 //   - 在阈值内按了其它键    → 补发 Win 按下 + 该键，Win+E、Win+D 等组合键照常工作
-//   - 按住超过阈值          → 通知主线程弹出迷你任务栏，之后的 Win 松开也吞掉，系统完全感知不到这次按键
+//   - 按住超过阈值          → 弹迷你任务栏，之后的 Win 松开也吞掉；任务栏可见时 Win 键完全交给系统
 //
 // 钩子跑在单独的线程上：主线程画弹窗、读窗口列表时，键盘不会因此变卡；
 // 钩子回调超时太多次的话 Windows 会悄悄把钩子摘掉，单独线程也能避免这种情况。
@@ -30,7 +34,7 @@ constexpr ULONG_PTR kInjectMarker = 0x54425055;
 
 // 主线程改设置，钩子线程读
 std::atomic<bool> s_enabled{true};
-std::atomic<int> s_thresholdMs{kDefaultLongPressMs};
+std::atomic<int> s_thresholdMs{kDefaultDoubleTapMs};
 std::atomic<bool> s_taskbarHidden{false};  // 主线程：本程序藏着任务栏
 
 // 以下只在钩子线程里访问
@@ -231,7 +235,7 @@ void GiveBack(const INPUT& next) {
     SendInput(2, in, sizeof(INPUT));
 }
 
-// 键盘事件：1 吞掉，0 放行，-1 不归快捷键管（接着按长按 Win 的逻辑走）
+// 键盘事件：1 吞掉，0 放行，-1 不归快捷键管（接着按 Win 键的逻辑走，只在藏着任务栏时拦）
 int BindKey(bool down, const KBDLLHOOKSTRUCT& k) {
     UINT vk = k.vkCode;
     bool mine = vk == s_press.vk && !IsMouseVk(s_press.vk);
@@ -321,9 +325,48 @@ void ForgetLostWin(bool keyDown, DWORD time) {
     }
 }
 
+// ---- 双击 Ctrl ----
+// 只观察不吞键。别的键按下、点鼠标/滚轮都会把计数作废，
+// 所以 Ctrl+C、Ctrl+点选、切输入法（Ctrl+Shift）都不会误触发。
+DWORD s_lastCtrlUp = 0;    // 第一下干净轻点的松开时间（0 = 没有待配对的）
+bool s_ctrlHeld = false;   // Ctrl 按着（自动重复不算新按下）
+bool s_ctrlClean = false;  // 这次按住期间没碰别的键/鼠标
+DWORD s_ctrlDownAt = 0;
+
+void DoubleTapReset() { s_lastCtrlUp = 0; s_ctrlClean = false; }
+
+void DoubleTapCtrl(bool down, const KBDLLHOOKSTRUCT& k) {
+    if (k.flags & LLKHF_INJECTED) return;  // 程序注入的按键不算（和快捷键钩子同一规矩）
+    UINT vk = k.vkCode;
+    if (vk != VK_LCONTROL && vk != VK_RCONTROL) {
+        if (down) DoubleTapReset();  // 两下之间按了别的键：作废
+        return;
+    }
+    if (down) {
+        if (s_ctrlHeld) return;  // 按住时的自动重复
+        s_ctrlHeld = true;
+        s_ctrlDownAt = k.time;
+        // 先按住了 Shift/Alt/Win 再按 Ctrl（Ctrl+Shift 切输入法之类）：不算干净轻点。
+        // 不查 Ctrl 自己：按下瞬间异步状态可能已含本次按键（注入事件尤其如此）
+        s_ctrlClean = !(GetAsyncKeyState(VK_SHIFT) & 0x8000) && !(GetAsyncKeyState(VK_MENU) & 0x8000) &&
+                      !(GetAsyncKeyState(VK_LWIN) & 0x8000) && !(GetAsyncKeyState(VK_RWIN) & 0x8000);
+    } else {
+        if (!s_ctrlHeld) return;  // 没配对按下的松开
+        s_ctrlHeld = false;
+        if (!s_ctrlClean || k.time - s_ctrlDownAt > kTapMaxMs) { DoubleTapReset(); return; }
+        if (s_lastCtrlUp && k.time - s_lastCtrlUp <= static_cast<DWORD>(s_thresholdMs.load())) {
+            s_lastCtrlUp = 0;
+            PostMessageW(g_mainWnd, WM_APP_LONGPRESS, 0, 0);
+        } else {
+            s_lastCtrlUp = k.time;  // 第一下，等第二下
+        }
+    }
+}
+
 // 鼠标事件：返回 true 表示吞掉
 bool HandleMouse(WPARAM msg, const MSLLHOOKSTRUCT& m) {
     if (m.dwExtraInfo == kInjectMarker) return false;
+    if (msg != WM_MOUSEMOVE && s_enabled.load()) DoubleTapReset();  // 点鼠标/滚轮：计数作废（Ctrl+点选不算轻点）
     if (msg == WM_MOUSEWHEEL || msg == WM_MOUSEHWHEEL) {
         // Ctrl + 滚轮缩放、Shift + 滚轮横着滚：单独的修饰键这次不算
         if (s_press.state == Press::Modifier && !s_press.fired) {
@@ -399,13 +442,13 @@ LRESULT CALLBACK MouseProc(int code, WPARAM wParam, LPARAM lParam) {
     return CallNextHookEx(s_mouseHook, code, wParam, lParam);
 }
 
-// 换上主线程交过来的快捷键。有鼠标键、单独的修饰键（要看中间点没点鼠标）时才装鼠标钩子
+// 换上主线程交过来的快捷键。双击 Ctrl、鼠标键、单独的修饰键（要看中间点没点鼠标）时才装鼠标钩子
 void TakeBindings() {
     {
         std::lock_guard<std::mutex> guard(s_bindLock);
         s_bindings = s_newBindings;
     }
-    bool mouse = std::any_of(s_bindings.begin(), s_bindings.end(),
+    bool mouse = s_enabled.load() || std::any_of(s_bindings.begin(), s_bindings.end(),
                              [](const KeyBinding& b) { return IsMouseVk(b.vk) || IsModifierVk(b.vk); });
     if (mouse && !s_mouseHook) {
         s_mouseHook = SetWindowsHookExW(WH_MOUSE_LL, MouseProc, GetModuleHandleW(nullptr), 0);
@@ -421,6 +464,7 @@ bool HandleKey(WPARAM msg, const KBDLLHOOKSTRUCT& k) {
     if (k.dwExtraInfo == kInjectMarker) return false;
 
     bool down = msg == WM_KEYDOWN || msg == WM_SYSKEYDOWN;
+    if (s_enabled.load()) DoubleTapCtrl(down, k);  // 双击 Ctrl：只观察，不吞键
     bool isWin = k.vkCode == VK_LWIN || k.vkCode == VK_RWIN;
     if (isWin) {
         // 等 Win 松开的状态下，隔了很久又来一个 Win 按下：不是按住时的自动重复（最慢也几百毫秒一次），
@@ -441,7 +485,7 @@ bool HandleKey(WPARAM msg, const KBDLLHOOKSTRUCT& k) {
 
     switch (s_state) {
         case State::Idle:
-            if (!(s_enabled || s_taskbarHidden) || !isWin || !down) return false;
+            if (!s_taskbarHidden || !isWin || !down) return false;  // 任务栏可见时 Win 键完全交给系统
             s_winVk = k.vkCode;
             // 别的软件注入的 Win，或者先按住了 Ctrl/Shift/Alt 的组合键：不干预
             if ((k.flags & LLKHF_INJECTED) || ModifierHeld()) {
@@ -449,7 +493,7 @@ bool HandleKey(WPARAM msg, const KBDLLHOOKSTRUCT& k) {
                 return false;
             }
             s_state = State::Pending;
-            if (s_enabled) StartTimer();  // 只为任务栏藏着时的开始菜单拦的话不用等长按
+            StartTimer();  // 只有藏着任务栏时才走到这里
             return true;
 
         case State::Pending:
@@ -555,6 +599,8 @@ void Hook_SetBindings(const std::vector<KeyBinding>& bindings) {
 void Hook_Configure(bool enabled, int thresholdMs) {
     s_enabled = enabled;
     s_thresholdMs = thresholdMs;
+    // 双击 Ctrl 要靠鼠标钩子作废计数：开关变了让钩子线程重新评估装不装
+    if (s_thread) PostThreadMessageW(s_threadId, kMsgBindings, 0, 0);
 }
 
 void Hook_SetTaskbarHidden(bool hidden) { s_taskbarHidden = hidden; }

@@ -2,7 +2,7 @@
 
 # TaskbarPopup
 
-A Windows 10/11 taskbar enhancement: when a window is maximized, the taskbar hides and the window fills the whole screen. Hold the Win key and a liquid-glass mini taskbar pops up from the bottom of the screen. Single exe, no runtime to install.
+A Windows 10/11 taskbar enhancement: when a window is maximized, the taskbar hides and the window fills the whole screen. Double-tap Ctrl and a liquid-glass mini taskbar pops up from the bottom of the screen. Single exe, no runtime to install.
 
 > The interface comes in English and Chinese. It follows your Windows display language; change it under Settings → Appearance → Language.
 
@@ -14,7 +14,7 @@ Demo video: [YouTube](https://youtu.be/nTGIbGz5Qlw)
 
 Maximize a window and the taskbar slides away while the window fills the screen. Restore, minimize or close it and the taskbar slides back, with your desktop icons right where they were.
 
-You can also turn on "Always hide taskbar" in Settings (off by default): the taskbar stays hidden even with no maximized window, and touching the screen edge won't bring it up. Hold Win when you need it.
+You can also turn on "Always hide taskbar" in Settings (off by default): the taskbar stays hidden even with no maximized window, and touching the screen edge won't bring it up. Double-tap Ctrl when you need it.
 
 ![The taskbar slides away and the maximized window fills the screen](docs/demo/en/fullscreen.webp)
 
@@ -24,11 +24,11 @@ Right-click an app in the mini taskbar and tick "Don't hide taskbar when maximiz
 
 ![A ticked app keeps the taskbar when maximized](docs/demo/en/apps.webp)
 
-### Hold Win for the mini taskbar
+### Double-tap Ctrl for the mini taskbar
 
-Hold Win for 1 second (adjustable) and the mini taskbar rises from the bottom: pinned apps, open windows, hidden tray icons, the clock, volume and brightness sliders, plus Wi-Fi and Bluetooth toggles. Hover a window icon for a live thumbnail. A short press of Win still opens the Start menu.
+Double-tap Ctrl (gap defaults to 0.4 s, adjustable 150–1000 ms) and the mini taskbar rises from the bottom: pinned apps, open windows, hidden tray icons, the clock, volume and brightness sliders, plus Wi-Fi and Bluetooth toggles. Hover a window icon for a live thumbnail. Combos like Ctrl+C are unaffected, and the Win key is left entirely to the system.
 
-![Hold Win and the mini taskbar rises from the bottom](docs/demo/en/popup.webp)
+![Double-tap Ctrl and the mini taskbar rises from the bottom](docs/demo/en/popup.webp)
 
 ### Tap Win while the taskbar is hidden
 
@@ -121,7 +121,7 @@ Get the latest `TaskbarPopup.zip` from [Releases](../../releases), unzip it and 
 
 | Action | Result |
 | --- | --- |
-| Hold Win / hotkey | Open / close |
+| Double-tap Ctrl / hotkey | Open / close |
 | Click an icon | Switch to that window (click the active one to minimize); start a pinned app that isn't running |
 | Shift + click | Open another window |
 | Right-click / Menu key | Right-click menu |
@@ -163,7 +163,7 @@ Right-click the tray icon → Settings. Options are grouped into Taskbar, Mini t
 
 ## Known limitations
 
-- **Holding Win does nothing in admin programs and games**: Windows doesn't pass their key presses to a normal-privilege program. Tick "Run as administrator" in the tray menu. With start-at-login on as well, there's no UAC prompt at startup.
+- **Double-tapping Ctrl does nothing in admin programs and games**: Windows doesn't pass their key presses to a normal-privilege program. Tick "Run as administrator" in the tray menu. With start-at-login on as well, there's no UAC prompt at startup.
 - **Edge / Chrome may show a thin line (about 2 px) at the bottom**: the browser leaves it for the auto-hidden taskbar and it can't be changed from outside.
 - **Multiple monitors**: Edge, Chrome and similar apps need Windows' auto-hide when maximized. It applies to every monitor, so the taskbars on the other monitors auto-hide too. The same happens when only one monitor has a taskbar.
 - **Notifications may not show while maximized**: go to Settings → System → Notifications → Turn on do not disturb automatically, and turn off "When using an app in full-screen mode".
@@ -176,7 +176,7 @@ Right-click the tray icon → Settings. Options are grouped into Taskbar, Mini t
 - **Input mode**: a few third-party IMEs manage Chinese / English themselves, so the indicator may be off and clicking may not switch. Use the IME's own shortcut then.
 - **Tray icons** are clicked for you in the system tray through UI Automation, which may miss for a few programs. If it does, try once with the diagnostic log on.
 - **The mini taskbar's glass background** follows what's behind it in real time, like the Settings window. This needs Windows 10 2004 or later; on older versions it's a snapshot from when it opened.
-- **Antivirus false positives**: the exe isn't signed and uses keyboard and mouse hooks (only to detect holding Win and your hotkeys; no keys are recorded or sent anywhere). Release builds are compiled from source by GitHub Actions. If it's blocked, allow it in Windows Security → Protection history.
+- **Antivirus false positives**: the exe isn't signed and uses keyboard and mouse hooks (only to detect double-tap Ctrl and your hotkeys; no keys are recorded or sent anywhere). Release builds are compiled from source by GitHub Actions. If it's blocked, allow it in Windows Security → Protection history.
 - **Taskbar missing after force-killing the app**: start the app again and it restores everything.
 
 ## Building from source
@@ -195,7 +195,7 @@ Requires C++17. From the repository root:
 | `src/fullscreen.cpp` | Detect maximized windows, hide the taskbar, stretch the window |
 | `src/taskbar_anim.cpp` | Taskbar slide out / in animation |
 | `src/desktop_icons.cpp` | Save and restore desktop icon positions |
-| `src/hook.cpp` | Keyboard and mouse hooks: holding Win and hotkeys |
+| `src/hook.cpp` | Keyboard and mouse hooks: double-tap Ctrl and hotkeys |
 | `src/popup.cpp` | The mini taskbar |
 | `src/glass.cpp` | Liquid glass material |
 | `src/float_windows.cpp` | Keep small windows on top |

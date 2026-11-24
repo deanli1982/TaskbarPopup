@@ -1,6 +1,6 @@
 // TaskbarPopup：Win11 任务栏增强
 //   1. 窗口最大化或全屏时隐藏任务栏，窗口铺满整个屏幕
-//   2. 长按 Win 键，从屏幕底部中央弹出迷你任务栏（含固定在任务栏的应用）
+//   2. 双击 Ctrl，从屏幕底部中央弹出迷你任务栏（含固定在任务栏的应用）
 #include "common.h"
 
 #include <cmath>
@@ -62,7 +62,7 @@ void AddTrayIcon() {
     s_nid.uFlags = NIF_ICON | NIF_MESSAGE | NIF_TIP;
     s_nid.uCallbackMessage = WM_APP_TRAY;
     s_nid.hIcon = s_trayIcon;
-    lstrcpynW(s_nid.szTip, Tr(L"TaskbarPopup：全屏隐藏任务栏 / 长按 Win 弹出"), ARRAYSIZE(s_nid.szTip));
+    lstrcpynW(s_nid.szTip, Tr(L"TaskbarPopup：全屏隐藏任务栏 / 双击 Ctrl 弹出"), ARRAYSIZE(s_nid.szTip));
     Shell_NotifyIconW(NIM_ADD, &s_nid);
 }
 
@@ -116,7 +116,7 @@ void HandleCommand(UINT id) {
             SettingsDialog_SettingsChanged();
             break;
         case ID_LONGPRESS:
-            g_settings.longPressPopup = !g_settings.longPressPopup;
+            g_settings.doubleTapPopup = !g_settings.doubleTapPopup;
             SaveSettings();
             ApplySettings();
             SettingsDialog_SettingsChanged();
@@ -150,7 +150,7 @@ void HandleCommand(UINT id) {
 void ShowTrayMenu() {
     HMENU menu = CreatePopupMenu();
     auto check = [](bool on) { return on ? MF_CHECKED : MF_UNCHECKED; };
-    std::wstring longPressText = TrF(L"长按 Win 键弹出迷你任务栏（%d 毫秒）", g_settings.longPressMs);
+    std::wstring longPressText = TrF(L"双击 Ctrl 弹出迷你任务栏（间隔 %d 毫秒）", g_settings.doubleTapMs);
 
     AppendMenuW(menu, MF_STRING, ID_SHOW, Tr(L"显示迷你任务栏"));
     AppendMenuW(menu, MF_STRING, ID_SETTINGS, Tr(L"设置..."));
@@ -158,9 +158,9 @@ void ShowTrayMenu() {
     AppendMenuW(menu, MF_SEPARATOR, 0, nullptr);
     AppendMenuW(menu, MF_STRING | check(g_settings.autoHideOnFullscreen), ID_AUTOHIDE, Tr(L"窗口最大化或全屏时隐藏任务栏"));
     AppendMenuW(menu, MF_STRING | check(g_settings.alwaysHideTaskbar), ID_ALWAYSHIDE, Tr(L"一直隐藏任务栏"));
-    AppendMenuW(menu, MF_STRING | check(g_settings.longPressPopup), ID_LONGPRESS, longPressText.c_str());
+    AppendMenuW(menu, MF_STRING | check(g_settings.doubleTapPopup), ID_LONGPRESS, longPressText.c_str());
     AppendMenuW(menu, MF_STRING | check(IsAutoStartEnabled()), ID_AUTOSTART, Tr(L"开机自动启动"));
-    AppendMenuW(menu, MF_STRING | check(g_settings.runAsAdmin), ID_RUNASADMIN, Tr(L"以管理员身份运行（游戏里也能长按 Win）"));
+    AppendMenuW(menu, MF_STRING | check(g_settings.runAsAdmin), ID_RUNASADMIN, Tr(L"以管理员身份运行（游戏里也能双击 Ctrl）"));
     AppendMenuW(menu, MF_SEPARATOR, 0, nullptr);
     AppendMenuW(menu, MF_STRING | check(g_settings.debugLog), ID_DEBUGLOG, Tr(L"记录诊断日志"));
     if (g_settings.debugLog || GetFileAttributesW(LogFile().c_str()) != INVALID_FILE_ATTRIBUTES)
@@ -195,7 +195,7 @@ void Shutdown() {
 LRESULT CALLBACK MainProc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lParam) {
     switch (msg) {
         case WM_APP_LONGPRESS:
-            Log(L"长按 Win");
+            Log(L"双击 Ctrl");
             Popup_Toggle();
             return 0;
 
@@ -612,9 +612,9 @@ void LoadSettings() {
     std::wstring f = SettingsFile();
     g_settings.autoHideOnFullscreen = GetPrivateProfileIntW(L"General", L"AutoHideOnFullscreen", 1, f.c_str()) != 0;
     g_settings.alwaysHideTaskbar = GetPrivateProfileIntW(L"General", L"AlwaysHideTaskbar", 0, f.c_str()) != 0;
-    g_settings.longPressPopup = GetPrivateProfileIntW(L"General", L"LongPressPopup", 1, f.c_str()) != 0;
-    int ms = static_cast<int>(GetPrivateProfileIntW(L"General", L"LongPressMs", kDefaultLongPressMs, f.c_str()));
-    g_settings.longPressMs = std::max(kMinLongPressMs, std::min(ms, kMaxLongPressMs));
+    g_settings.doubleTapPopup = GetPrivateProfileIntW(L"General", L"LongPressPopup", 1, f.c_str()) != 0;
+    int ms = static_cast<int>(GetPrivateProfileIntW(L"General", L"DoubleTapMs", kDefaultDoubleTapMs, f.c_str()));
+    g_settings.doubleTapMs = std::max(kMinDoubleTapMs, std::min(ms, kMaxDoubleTapMs));
     g_settings.showPinnedApps = GetPrivateProfileIntW(L"General", L"ShowPinnedApps", 1, f.c_str()) != 0;
     for (const ModuleKey& k : kModuleSetKeys) {
         int def = k.oldKey ? static_cast<int>(GetPrivateProfileIntW(L"General", k.oldKey, k.def, f.c_str())) : k.def;
@@ -722,8 +722,8 @@ void LoadSettings() {
         g_settings.hotkey[id] = ParseHotkey(buf.data());
         std::wstring hold = std::wstring(kHotkeyKeys[id]) + L"Hold";
         g_settings.hotkeyHold[id] = GetPrivateProfileIntW(L"General", hold.c_str(), 0, f.c_str()) != 0;
-        // 没设过的话用长按 Win 的时长（以前长按的快捷键和它共用）
-        int holdMs = static_cast<int>(GetPrivateProfileIntW(L"General", (hold + L"Ms").c_str(), g_settings.longPressMs, f.c_str()));
+        // 没设过的话用默认长按时长（快捷键长按和双击 Ctrl 间隔是两回事，不再共用）
+        int holdMs = static_cast<int>(GetPrivateProfileIntW(L"General", (hold + L"Ms").c_str(), kDefaultLongPressMs, f.c_str()));
         g_settings.hotkeyHoldMs[id] = std::max(kMinLongPressMs, std::min(holdMs, kMaxLongPressMs));
     }
     auto loadList = [&](const wchar_t* key, std::vector<std::wstring>& apps) {
@@ -781,8 +781,8 @@ void SaveSettings() {
     std::wstring f = SettingsFile();
     WritePrivateProfileStringW(L"General", L"AutoHideOnFullscreen", g_settings.autoHideOnFullscreen ? L"1" : L"0", f.c_str());
     WritePrivateProfileStringW(L"General", L"AlwaysHideTaskbar", g_settings.alwaysHideTaskbar ? L"1" : L"0", f.c_str());
-    WritePrivateProfileStringW(L"General", L"LongPressPopup", g_settings.longPressPopup ? L"1" : L"0", f.c_str());
-    WritePrivateProfileStringW(L"General", L"LongPressMs", std::to_wstring(g_settings.longPressMs).c_str(), f.c_str());
+    WritePrivateProfileStringW(L"General", L"LongPressPopup", g_settings.doubleTapPopup ? L"1" : L"0", f.c_str());
+    WritePrivateProfileStringW(L"General", L"DoubleTapMs", std::to_wstring(g_settings.doubleTapMs).c_str(), f.c_str());
     WritePrivateProfileStringW(L"General", L"ShowPinnedApps", g_settings.showPinnedApps ? L"1" : L"0", f.c_str());
     for (const ModuleKey& k : kModuleSetKeys) {
         WritePrivateProfileStringW(L"General", k.key, g_settings.modules[kSideBottom].*k.item ? L"1" : L"0", f.c_str());
@@ -1076,7 +1076,7 @@ void ApplySettings() {
     // 设置窗口开着时它在预览选中的语言（关掉时会换回设置里的），别在托盘菜单里点了开关就把它打乱
     if (!SettingsDialog_Hwnd()) SetUiEnglish(LanguageIsEnglish(g_settings.language));
     if (s_nid.cbSize) {  // 托盘图标已经加上了：提示文字换成现在的语言
-        lstrcpynW(s_nid.szTip, Tr(L"TaskbarPopup：全屏隐藏任务栏 / 长按 Win 弹出"), ARRAYSIZE(s_nid.szTip));
+        lstrcpynW(s_nid.szTip, Tr(L"TaskbarPopup：全屏隐藏任务栏 / 双击 Ctrl 弹出"), ARRAYSIZE(s_nid.szTip));
         UINT flags = s_nid.uFlags;
         s_nid.uFlags = NIF_TIP;
         Shell_NotifyIconW(NIM_MODIFY, &s_nid);
@@ -1084,7 +1084,7 @@ void ApplySettings() {
     }
     // 关着“最大化或全屏时隐藏任务栏”时，名单里有程序也要看着前台（只给名单里的程序藏任务栏）；一直隐藏任务栏时总要开着
     Fullscreen_SetEnabled(g_settings.autoHideOnFullscreen || !g_settings.includeApps.empty() || g_settings.alwaysHideTaskbar);
-    Hook_Configure(g_settings.longPressPopup, g_settings.longPressMs);
+    Hook_Configure(g_settings.doubleTapPopup, g_settings.doubleTapMs);
     Update_Configure();
     FloatWindows_Configure(g_settings.keepFloatsOnTop, g_settings.pinTopmost);
     Hotkeys_Apply();
@@ -1171,7 +1171,7 @@ int WINAPI wWinMain(HINSTANCE instance, HINSTANCE, PWSTR, int) {
     ApplySettings();
     if (g_settings.debugLog) Fullscreen_LogState();
     if (!Hook_Install())
-        MessageBoxW(nullptr, Tr(L"无法安装键盘钩子，长按 Win 功能不可用。"), L"TaskbarPopup", MB_ICONWARNING);
+        MessageBoxW(nullptr, Tr(L"无法安装键盘钩子，双击 Ctrl 功能不可用。"), L"TaskbarPopup", MB_ICONWARNING);
     AddTrayIcon();
     Hotkeys_Apply();  // 快捷键注册不上时，上面那次托盘图标还没加上、气泡弹不出来，现在再试一次
 
