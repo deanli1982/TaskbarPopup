@@ -105,6 +105,7 @@ struct Tile {
     std::wstring pinName;
     std::shared_ptr<Bitmap> pinIcon;
     std::wstring search;  // 打字筛选时比较的小写文字：标题、应用名、程序文件名
+    std::wstring key;     // 应用 key（AppKeyOf）：图标分组按它归属，空 = 不参与分组
 };
 
 // 以下尺寸都是物理像素，按目标显示器的缩放比例计算
@@ -191,6 +192,8 @@ int s_width = 0, s_height = 0;
 POINT s_pos = {};   // 窗口在屏幕上的位置
 int s_first = 0;    // 横向滚动：第一个可见的格子序号
 int s_visible = 0;  // 一屏能放下几个
+std::vector<float> s_tileOff;  // 每个可见格子离格子段起点的偏移（组与组之间多一条分隔带）
+float s_tileSpan = 0;          // 可见格子一共占多长（含分隔带）
 int s_hover = -1;   // 鼠标下的格子：-1 无，0 开始按钮，i+1 第 i 个格子
 int s_sel = 0;      // 选中的格子（键盘焦点），编号同上
 bool s_open = false;
@@ -799,6 +802,66 @@ float PlaceModules(Layout& L, float start) {
 // 编辑模式里开着却暂时没有内容的托盘（没有隐藏的图标）也占个位置，好拖着排顺序
 bool TrayHolder() { return s_editing && s_tray.empty() && Mods().tray && !s_compact; }
 
+// ---------------- 图标分组：格子位置 ----------------
+// 组与组之间多一条分隔带（分隔线 + 组名），同组内还是统一间距。
+// 未分组的排在最前，然后按组的顺序；BuildTiles 里排好，这里只管位置。
+
+// 估算文字宽度（只用来占位，画的时候按实际宽度截断）：中日韩字符约 1em，其它约 0.6em
+float EstimateTextW(const std::wstring& text, float fontPx) {
+    float em = 0;
+    for (wchar_t c : text) em += c >= 0x2E80 ? 1.0f : 0.6f;
+    return em * fontPx;
+}
+
+// 第 i 个格子前面的分隔带占多长（横排是宽、竖排是高）；0 = 和上一个同组，不用分隔
+float GroupSepLen(int i) {
+    if (i <= 0 || i >= static_cast<int>(s_items.size())) return 0;
+    int g = GroupOfKey(s_items[i].key), prev = GroupOfKey(s_items[i - 1].key);
+    if (g == prev) return 0;
+    if (Vertical()) {
+        // 竖排：组名横着写在列宽里，窄列会折行——按折行数给足高度，不然第二行被裁
+        if (g < 0) return Px(12);
+        float avail = std::max(Px(16), s_L.tile - Px(8));
+        float est = EstimateTextW(g_iconGroups[g].name, Px(11.5f)) * 1.1f;
+        int lines = std::max(1, static_cast<int>(std::ceil(est / avail)));
+        return std::max(Px(20), lines * Px(13.0f) + Px(6));
+    }
+    if (g < 0) return Px(12);       // 回到未分组（筛选时可能出现）：只画线不写名字
+    // 按实际绘制字号（smallFont = Px(11.5)）估算，再留 20% 余量给 GDI+ 的字距边距，
+    // 不然「AI工具」这类短名字也会被省略号裁掉一两个字
+    return Px(18) + std::min(EstimateTextW(g_iconGroups[g].name, Px(11.5f)) * 1.2f, Px(88));
+}
+
+// 按 s_first/s_visible 算每个可见格子的偏移和总长
+void ComputeTilePositions() {
+    s_tileOff.assign(s_visible, 0.0f);
+    float off = 0;
+    for (int k = 0; k < s_visible; ++k) {
+        if (k > 0) off += s_L.wGap + GroupSepLen(s_first + k);
+        s_tileOff[k] = off;
+        off += s_L.wTile;
+    }
+    s_tileSpan = off;
+}
+
+// 放得下几个就显示几个：先按统一间距估，分隔带占地方就一个个减
+void FitVisibleCount(int n, float avail) {
+    if (n <= 0) {
+        s_visible = 0;
+        s_tileOff.clear();
+        s_tileSpan = 0;
+        return;
+    }
+    int fit = std::max(1, static_cast<int>((avail + s_L.wGap) / (s_L.wTile + s_L.wGap) + 0.001f));
+    s_visible = std::min(n, fit);
+    while (s_visible > 1) {
+        ComputeTilePositions();
+        if (s_tileSpan <= avail + 0.5f) break;
+        --s_visible;
+    }
+    ComputeTilePositions();
+}
+
 // 按顺序排（自由布局时也先这样按原大小排一遍，模块里的东西照这个画，再放大缩小到各自的框里）
 void ComputeSequence() {
     Layout& L = s_L;
@@ -894,10 +957,8 @@ void ComputeSequence() {
         s_trayFirst = std::clamp(s_trayFirst, 0, std::max(0, trayCount - s_trayRowMax));
         float others = fixed + L.rowGap + L.sliderH + radiosH;
         float avail = std::max(L.wTile, maxLen - others);
-        s_visible = std::min(n, std::max(1, static_cast<int>((avail + L.wGap) / (L.wTile + L.wGap))));
-        if (s_lockedItemsW > 0 && custom <= 0)
-            s_visible = std::min(n, std::max(1, static_cast<int>((s_lockedItemsW + L.wGap) / (L.wTile + L.wGap))));
-        float tilesH = n == 0 ? L.emptyW * kw : s_visible * (L.wTile + L.wGap) - L.wGap;
+        FitVisibleCount(n, s_lockedItemsW > 0 && custom <= 0 ? s_lockedItemsW : avail);
+        float tilesH = n == 0 ? L.emptyW * kw : s_tileSpan;
         if (custom > 0) L.itemsW = std::max(avail, tilesH);  // 拖过长度：格子那段占满，格子在中间
         else L.itemsW = s_lockedItemsW > 0 ? s_lockedItemsW : tilesH;
         L.tilesLen = tilesH;
@@ -973,15 +1034,9 @@ void ComputeSequence() {
     float maxLen = ScreenSide() * 0.85f - 2 * L.margin;
     if (custom > 0) maxLen = std::max(std::max(L.minPanelW, others + L.wTile), std::min(custom, ScreenSide() - 2 * L.margin));
     float avail = maxLen - others;
-    int maxFit = std::max(1, static_cast<int>((avail + L.wGap) / (L.wTile + L.wGap)));
-    s_visible = std::min(n, maxFit);
-
     // 格子少的时候面板按最小宽度来，格子在中间那段里居中
-    if (s_lockedItemsW > 0 && custom <= 0) {
-        int fit = std::max(1, static_cast<int>((s_lockedItemsW + L.wGap) / (L.wTile + L.wGap)));
-        s_visible = std::min(n, fit);
-    }
-    float tilesW = n == 0 ? L.emptyW * kw : s_visible * (L.wTile + L.wGap) - L.wGap;
+    FitVisibleCount(n, s_lockedItemsW > 0 && custom <= 0 ? s_lockedItemsW : avail);
+    float tilesW = n == 0 ? L.emptyW * kw : s_tileSpan;
     if (custom > 0) L.itemsW = std::max(avail, tilesW);  // 拖过长度：格子那段占满，格子在中间
     else L.itemsW = s_lockedItemsW > 0 ? s_lockedItemsW : std::max(tilesW, L.minPanelW - others);
     L.tilesLen = tilesW;
@@ -1210,9 +1265,11 @@ RectF TileRect(int index) {
         return Vertical() ? RectF(across, at, t, t) : RectF(at, across, t, t);
     }
     int slot = index - 1 - s_first;
-    float t = L.wTile, step = L.wTile + L.wGap, across = L.modC[kModWindows] - t / 2;
-    if (Vertical()) return RectF(across, L.tilesY + slot * step, t, t);
-    return RectF(L.tilesX + slot * step, across, t, t);
+    float t = L.wTile, across = L.modC[kModWindows] - t / 2;
+    // 组与组之间有分隔带，间距不统一：按算好的偏移来
+    float off = slot >= 0 && slot < static_cast<int>(s_tileOff.size()) ? s_tileOff[slot] : slot * (L.wTile + L.wGap);
+    if (Vertical()) return RectF(across, L.tilesY + off, t, t);
+    return RectF(L.tilesX + off, across, t, t);
 }
 
 // 沿着格子排列方向的坐标：横排是 x，竖排是 y
@@ -1711,8 +1768,8 @@ void ApplyFreeLayout(Layout& L) {
     L.modK[kModWindows] = t / L.tile;
     L.wTile = t;
     L.wGap = L.gap * t / L.tile;
-    s_visible = n == 0 ? 0 : std::clamp(static_cast<int>((along + L.wGap) / (t + L.wGap) + 0.001f), 1, n);
-    L.tilesLen = n == 0 ? along : s_visible * (t + L.wGap) - L.wGap;
+    FitVisibleCount(n, along);
+    L.tilesLen = n == 0 ? along : s_tileSpan;
     L.itemsW = along;
     (v ? L.itemsY : L.itemsX) = start;
     (v ? L.tilesY : L.tilesX) = start + (along - L.tilesLen) / 2;
@@ -2735,6 +2792,41 @@ void DrawContent(Graphics& g) {
                     Tone tile(TileRect(idx));
                     DrawTile(g, idx);
                 }
+                // 图标分组：组与组之间的分隔带——分隔线 + 组名（竖排时横线 + 组名）
+                for (int k = 1; k < s_visible && k < static_cast<int>(s_tileOff.size()); ++k) {
+                    int i = s_first + k;
+                    float sep = GroupSepLen(i);
+                    if (sep <= 0) continue;
+                    int gi = GroupOfKey(s_items[i].key);
+                    std::wstring name = gi >= 0 ? g_iconGroups[gi].name : std::wstring();
+                    Pen groupPen(Colors().separator, 1.0f);
+                    if (vertical) {
+                        float zoneStart = L.tilesY + s_tileOff[k - 1] + L.wTile + L.wGap;
+                        float cy = zoneStart + sep / 2, cx = L.colX + L.tile / 2;
+                        float textW = name.empty() ? 0 : std::min(EstimateTextW(name, Px(11.5f)), L.tile - Px(8));
+                        if (textW > 0) {
+                            g.DrawLine(&groupPen, L.colX, cy, cx - textW / 2 - Px(4), cy);
+                            g.DrawLine(&groupPen, cx + textW / 2 + Px(4), cy, L.colX + L.tile, cy);
+                            RectF tr(cx - textW / 2, zoneStart, textW, sep);
+                            DrawLabel(g, name.c_str(), smallFont, tr, center, Colors().subtle);
+                        } else {
+                            g.DrawLine(&groupPen, L.colX, cy, L.colX + L.tile, cy);
+                        }
+                    } else {
+                        float zoneStart = L.tilesX + s_tileOff[k - 1] + L.wTile + L.wGap;
+                        float half = std::max(Px(4), L.tile / 2 - Px(10));
+                        float lx = zoneStart + Px(5);
+                        g.DrawLine(&groupPen, lx, L.rowC - half, lx, L.rowC + half);
+                        if (!name.empty()) {
+                            StringFormat left(StringFormatFlagsNoWrap);
+                            left.SetAlignment(StringAlignmentNear);
+                            left.SetLineAlignment(StringAlignmentCenter);
+                            left.SetTrimming(StringTrimmingEllipsisCharacter);
+                            RectF tr(lx + Px(5), L.tileY, sep - Px(12), L.tile);
+                            DrawLabel(g, name.c_str(), smallFont, tr, left, Colors().subtle);
+                        }
+                    }
+                }
                 // 窗口多到放不下时，两头的小三角提示还能滚动；那边有闪着要提醒的窗口时是橙色
                 SolidBrush hint(Colors().subtle), urgentHint(UrgentColor());
                 float tri = Px(4);
@@ -3673,6 +3765,7 @@ void ApplyFilter(bool keep = false) {
             if (shown) continue;
             auto icon = ShellItemIcon(a.launch, iconPx);
             s_items.push_back({a.name, icon, nullptr, false, a.launch, a.name, icon, a.search});
+            s_items.back().key = AppKeyOf(L"", L"", a.launch);
         }
     }
     ComputeLayout();
@@ -3694,6 +3787,18 @@ void ApplyFilter(bool keep = false) {
             }
     s_thumbIdx = -1;  // 格子重新排过：缩略图按新位置摆
     EnsureVisible(s_sel);
+    Redraw();
+}
+
+std::vector<Tile> BuildTiles(const std::vector<WindowEntry>& windows);  // 定义在后面，这里先用
+
+// 分组变化后：重读窗口、按新组重排格子，保留筛选词和选中项，重新适配面板长度
+void RebuildTilesAfterGroups() {
+    s_allItems = WindowsShown() ? BuildTiles(EnumerateWindows(s_prevForeground, IconPx(), s_monitor)) : std::vector<Tile>();
+    ApplyFilter(true);
+    s_lockedItemsW = 0;  // 分隔带变了，面板长度要重新适配，不能用旧的锁
+    FitTiles();
+    UpdatePlacement();
     Redraw();
 }
 
@@ -3874,6 +3979,10 @@ enum MenuCmd : UINT {
     kCmdMaximize,
     kCmdRecent = 100,  // 最近项：kCmdRecent + 序号
     kCmdMoveTo = 200,  // 移到另一块屏幕：kCmdMoveTo + 它在 MonitorsInOrder 里的序号
+    kCmdGroupNone = 300,   // 分组子菜单：不分组
+    kCmdGroupFirst = 301,  // 分组子菜单：kCmdGroupFirst + 组序号（最多 kMaxIconGroups 个）
+    kCmdGroupNew = 340,    // 新建分组…
+    kCmdGroupManage = 341, // 管理分组…
 };
 constexpr size_t kMaxRecent = 10;
 constexpr size_t kMaxMenuText = 40;
@@ -4038,6 +4147,20 @@ void ShowItemMenu(int idx, POINT at) {
     if (!app.launch.empty()) AppendMenuW(menu, MF_STRING, kCmdLaunch, hwnd ? MenuText(app.name).c_str() : Tr(L"打开"));
     if (!app.runAs.empty()) AppendMenuW(menu, MF_STRING, kCmdRunAs, Tr(L"以管理员身份运行"));
     if (!app.location.empty()) AppendMenuW(menu, MF_STRING, kCmdLocation, Tr(L"打开文件所在的位置"));
+    // 图标分组：把这个应用加进某个组（同一程序的窗口、固定格子一起动）
+    if (!item.key.empty()) {
+        separate();
+        HMENU sub = CreatePopupMenu();
+        int cur = GroupOfKey(item.key);
+        AppendMenuW(sub, MF_STRING | (cur < 0 ? MF_CHECKED : 0), kCmdGroupNone, Tr(L"不分组"));
+        for (size_t gi = 0; gi < g_iconGroups.size(); ++gi)
+            AppendMenuW(sub, MF_STRING | (cur == static_cast<int>(gi) ? MF_CHECKED : 0), kCmdGroupFirst + gi,
+                        MenuText(g_iconGroups[gi].name).c_str());
+        AppendMenuW(sub, MF_SEPARATOR, 0, nullptr);
+        AppendMenuW(sub, MF_STRING, kCmdGroupNew, Tr(L"新建分组…"));
+        AppendMenuW(sub, MF_STRING, kCmdGroupManage, Tr(L"管理分组…"));
+        AppendMenuW(menu, MF_POPUP, reinterpret_cast<UINT_PTR>(sub), Tr(L"分组"));
+    }
     if (hwnd) {
         separate();
         bool iconic = IsIconic(hwnd), zoomed = IsZoomed(hwnd);
@@ -4076,6 +4199,30 @@ void ShowItemMenu(int idx, POINT at) {
                               nullptr);
     DestroyMenu(menu);
     s_menuOpen = false;
+
+    // 图标分组：改的是归属，格子要按新组重排
+    if (cmd == kCmdGroupNone || (cmd >= kCmdGroupFirst && cmd < kCmdGroupFirst + g_iconGroups.size())) {
+        GroupsAssign(item.key, cmd == kCmdGroupNone ? -1 : static_cast<int>(cmd - kCmdGroupFirst));
+        RebuildTilesAfterGroups();
+        return;
+    }
+    if (cmd == kCmdGroupNew) {
+        std::wstring name;
+        if (GroupsAskName(s_hwnd, Tr(L"新建分组"), name)) {
+            if (GroupsCreate(name)) {
+                GroupsAssign(item.key, static_cast<int>(g_iconGroups.size()) - 1);
+                RebuildTilesAfterGroups();
+            } else {
+                MessageBoxW(s_hwnd, Tr(L"已有同名分组，或分组数已达上限"), L"TaskbarPopup", MB_ICONINFORMATION);
+            }
+        }
+        return;
+    }
+    if (cmd == kCmdGroupManage) {
+        GroupsDialog(s_hwnd);
+        RebuildTilesAfterGroups();
+        return;
+    }
 
     // 下面这些只用上面抄下来的东西，不碰格子；趁本窗口还在前台时启动，新程序才能顺利拿到前台
     if (cmd >= kCmdRecent && cmd < kCmdRecent + recent.size()) {
@@ -6535,24 +6682,41 @@ std::vector<Tile> BuildTiles(const std::vector<WindowEntry>& windows) {
     std::vector<bool> used(windows.size(), false);
     if (g_settings.showPinnedApps) {
         for (const PinnedApp& pin : LoadPinnedApps(IconPx())) {
+            std::wstring key = AppKeyOf(pin.aumid, pin.exePath, pin.launch);
             bool running = false;
             for (size_t i = 0; i < windows.size(); ++i) {
                 if (used[i] || !PinMatchesWindow(pin, windows[i])) continue;
                 used[i] = running = true;
                 const WindowEntry& w = windows[i];
                 tiles.push_back({w.title, w.icon ? w.icon : pin.icon, w.hwnd, w.active, pin.launch, pin.name, pin.icon});
+                tiles.back().key = key;
             }
-            if (!running) tiles.push_back({pin.name, pin.icon, nullptr, false, pin.launch, pin.name, pin.icon});
+            if (!running) {
+                tiles.push_back({pin.name, pin.icon, nullptr, false, pin.launch, pin.name, pin.icon});
+                tiles.back().key = key;
+            }
         }
     }
     for (size_t i = 0; i < windows.size(); ++i) {
         if (used[i]) continue;
         const WindowEntry& w = windows[i];
         tiles.push_back({w.title, w.icon, w.hwnd, w.active, L"", L"", nullptr});
+        tiles.back().key = AppKeyOf(w.aumid, w.exePath, L"");
     }
     for (Tile& t : tiles) {
         std::wstring exe = t.hwnd ? WindowExeName(t.hwnd) : NormalizeExeName(t.launch);
         t.search = ToLower(t.title + L"\n" + t.pinName + L"\n" + exe);
+    }
+    // 图标分组：未分组的在前，然后按组的顺序；组内保持原来的顺序（固定应用在前、窗口在后）
+    if (!g_iconGroups.empty()) {
+        std::vector<Tile> ordered;
+        ordered.reserve(tiles.size());
+        for (const Tile& t : tiles)
+            if (GroupOfKey(t.key) < 0) ordered.push_back(t);
+        for (size_t gi = 0; gi < g_iconGroups.size(); ++gi)
+            for (const Tile& t : tiles)
+                if (GroupOfKey(t.key) == static_cast<int>(gi)) ordered.push_back(t);
+        return ordered;
     }
     return tiles;
 }

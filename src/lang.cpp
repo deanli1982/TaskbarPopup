@@ -359,6 +359,26 @@ const wchar_t* const kEnglish[][2] = {
     {L"发现新版本 %ls，下载文件还没准备好，过一会儿再检查",
      L"New version %ls found, but its download isn't ready yet. Check again later."},
     {L"已经是最新版本（%ls）", L"You're up to date (%ls)"},
+    // —— 图标分组 ——
+    {L"分组", L"Group"},
+    {L"不分组", L"No group"},
+    {L"新建分组…", L"New group..."},
+    {L"管理分组…", L"Manage groups..."},
+    {L"新建分组", L"New group"},
+    {L"重命名分组", L"Rename group"},
+    {L"管理分组", L"Manage groups"},
+    {L"分组名", L"Group name"},
+    {L"已有同名分组，或分组数已达上限", L"A group with that name exists, or the group limit is reached"},
+    {L"新建…", L"New..."},
+    {L"重命名…", L"Rename..."},
+    {L"上移", L"Move up"},
+    {L"下移", L"Move down"},
+    {L"删除分组「%ls」？里面的应用会回到不分组。", L"Delete group \"%ls\"? Its apps return to ungrouped."},
+    {L"右键图标，选「分组」把它加进来", L"Right-click an icon and choose Group to add it"},
+    {L"%d 个应用", L"%d apps"},
+    {L"确定", L"OK"},
+    {L"取消", L"Cancel"},
+    {L"关闭", L"Close"},
 };
 
 }  // namespace

@@ -16,6 +16,7 @@ add_executable(TaskbarPopup WIN32
     src/levels.cpp
     src/settings_dialog.cpp
     src/pinned.cpp
+    src/groups.cpp
     src/util.cpp
     src/elevation.cpp
     src/apps.cpp

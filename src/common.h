@@ -347,6 +347,32 @@ bool PinMatchesWindow(const PinnedApp& pin, const WindowEntry& window);
 void LaunchApp(const std::wstring& target);
 void ReadShortcut(const std::wstring& path, std::wstring& exePath, std::wstring& aumid);  // 读 .lnk，原样大小写
 
+// ---------------- 图标分组（groups.cpp） ----------------
+// 迷你任务栏的格子按组分区显示：未分组的在前，然后按组的顺序，组间画分隔线 + 组名。
+// 只改迷你任务栏的展示，不动系统任务栏的固定列表。数据存 settings.ini 的 [Groups] 节。
+struct IconGroup {
+    std::wstring name;
+    std::vector<std::wstring> members;  // 应用 key（见 AppKeyOf），一律小写
+};
+constexpr int kMaxIconGroups = 24;       // 右键子菜单放得下
+constexpr int kMaxMembersPerGroup = 4096;
+extern std::vector<IconGroup> g_iconGroups;
+
+// 应用的统一 key：AUMID（小写）> 程序路径（小写）> 启动路径（小写）。
+// 同一程序的固定格子和多个窗口格子拿到同一个 key，入组时一起动。
+std::wstring AppKeyOf(const std::wstring& aumid, const std::wstring& exePath, const std::wstring& launch);
+int GroupOfKey(const std::wstring& key);   // 在第几个组；-1 = 未分组（含空 key）
+void GroupsInvalidate();                   // 组数据变了，让 key→组 缓存失效
+void GroupsLoad();                         // 读 [Groups]（LoadSettings 里调）
+void GroupsSave();                         // 写 [Groups]（SaveSettings 里调）
+void GroupsAssign(const std::wstring& key, int groupIdx);  // -1 = 移出所有组；写盘 + 缓存失效
+bool GroupsCreate(const std::wstring& name);               // 重名/超上限返回 false
+bool GroupsRename(int idx, const std::wstring& name);
+void GroupsDelete(int idx);
+void GroupsMove(int idx, int delta);       // delta = -1 上移 / +1 下移
+bool GroupsAskName(HWND owner, const wchar_t* title, std::wstring& name);  // 小输入框
+void GroupsDialog(HWND owner);             // 管理分组：新建/重命名/删除/上移/下移
+
 // ---------------- 以管理员身份运行（elevation.cpp） ----------------
 constexpr wchar_t kRestartArg[] = L"--restart";  // 重新启动的新实例：等旧实例退出后再运行
 bool IsElevated();

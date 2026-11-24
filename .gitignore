@@ -4,3 +4,6 @@
 *.exe
 *.res
 *.zip
+
+# 本地便携构建日志
+build-local.log

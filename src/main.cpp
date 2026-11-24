@@ -740,6 +740,7 @@ void LoadSettings() {
     };
     loadList(L"ExcludeApps", g_settings.excludeApps);
     loadList(L"IncludeApps", g_settings.includeApps);
+    GroupsLoad();  // 图标分组：[Groups] 节
     // 不隐藏任务栏的屏幕（MonitorKey），用 ; 隔开
     GetPrivateProfileStringW(L"General", L"NoHideScreens", L"", buf.data(), static_cast<DWORD>(buf.size()), f.c_str());
     g_settings.noHideScreens.clear();
@@ -776,6 +777,7 @@ void LoadSettings() {
 
 void SaveSettings() {
     EnsureUnicodeIni();
+    GroupsSave();  // 图标分组：[Groups] 节
     std::wstring f = SettingsFile();
     WritePrivateProfileStringW(L"General", L"AutoHideOnFullscreen", g_settings.autoHideOnFullscreen ? L"1" : L"0", f.c_str());
     WritePrivateProfileStringW(L"General", L"AlwaysHideTaskbar", g_settings.alwaysHideTaskbar ? L"1" : L"0", f.c_str());
@@ -950,7 +952,7 @@ bool ExportSettings(const std::wstring& path) {
     if (!ok) return false;
     std::wstring f = SettingsFile();
     std::vector<wchar_t> buf(65536);
-    std::vector<std::wstring> sections = {L"General"};
+    std::vector<std::wstring> sections = {L"General", L"Groups"};
     for (int slot : LookPresets()) sections.push_back(LookSection(slot));
     for (const std::wstring& section : sections) {
         DWORD n = GetPrivateProfileSectionW(section.c_str(), buf.data(), static_cast<DWORD>(buf.size()), f.c_str());
@@ -999,6 +1001,25 @@ bool ImportSettings(const std::wstring& path) {
         WritePrivateProfileStringW(section.c_str(), nullptr, nullptr, f.c_str());
         DWORD len = GetPrivateProfileSectionW(section.c_str(), buf.data(), static_cast<DWORD>(buf.size()), path.c_str());
         if (len > 0) WritePrivateProfileSectionW(section.c_str(), buf.data(), f.c_str());
+    }    // [Groups] 整节替换：先删掉现有的组，再从导入文件里抄过来（没有这一节 = 导入后不分组）
+    WritePrivateProfileStringW(L"Groups", nullptr, nullptr, f.c_str());
+    wchar_t nbuf[16];
+    GetPrivateProfileStringW(L"Groups", L"Count", L"0", nbuf, 16, path.c_str());
+    int gcount = std::clamp(_wtoi(nbuf), 0, kMaxIconGroups);
+    WritePrivateProfileStringW(L"Groups", L"Count", std::to_wstring(gcount).c_str(), f.c_str());
+    for (int gi = 0; gi < gcount; ++gi) {
+        std::wstring base = L"G" + std::to_wstring(gi + 1);
+        wchar_t gbuf[32768];
+        GetPrivateProfileStringW(L"Groups", (base + L"Name").c_str(), L"", gbuf, 32768, path.c_str());
+        WritePrivateProfileStringW(L"Groups", (base + L"Name").c_str(), gbuf, f.c_str());
+        GetPrivateProfileStringW(L"Groups", (base + L"Count").c_str(), L"0", nbuf, 16, path.c_str());
+        int members = std::clamp(_wtoi(nbuf), 0, kMaxMembersPerGroup);
+        WritePrivateProfileStringW(L"Groups", (base + L"Count").c_str(), std::to_wstring(members).c_str(), f.c_str());
+        for (int mi = 0; mi < members; ++mi) {
+            std::wstring mkey = base + L"M" + std::to_wstring(mi + 1);
+            GetPrivateProfileStringW(L"Groups", mkey.c_str(), L"", gbuf, 32768, path.c_str());
+            WritePrivateProfileStringW(L"Groups", mkey.c_str(), gbuf, f.c_str());
+        }
     }
     LoadSettings();
     ApplySettings();
